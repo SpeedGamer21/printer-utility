@@ -4,6 +4,11 @@
 share a printer from a PC, and fix the usual printer-sharing errors (0x0000011b, 0x00000709,
 0x0000007c, driver-install prompts). It works on PCs where Control Panel is blocked by Group Policy.
 
+### [⬇ Download PrinterUtility.exe](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe)
+
+Single file, about 190 KB, nothing to install. Runs on Windows 10/11 and Server 2016+.
+[All releases](https://github.com/SpeedGamer21/printer-utility/releases)
+
 ![Printer Utility – Printers page](docs/screenshots/printers-dark.png)
 
 ---
@@ -79,8 +84,18 @@ can run from a USB stick or a network share without installing anything.
 
 ## Getting the app
 
-**Option A: download.** Take `PrinterUtility.exe` from the
-[Releases](../../releases) page, if one has been published.
+**Option A: download (recommended).**
+[**PrinterUtility.exe** (latest release)](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe).
+Each [release](https://github.com/SpeedGamer21/printer-utility/releases) lists the file's SHA-256 so
+you can verify the download:
+
+```powershell
+Get-FileHash .\PrinterUtility.exe -Algorithm SHA256
+```
+
+> The exe isn't code-signed, so Windows SmartScreen may show *"Windows protected your PC"* the first
+> time. Click **More info → Run anyway**, or right-click the file → **Properties → Unblock**. To
+> deploy it widely, sign it with your organisation's code-signing certificate.
 
 **Option B: build it** (see [Building from source](#building-from-source)):
 
