@@ -1,0 +1,53 @@
+<UserControl x:Class="PrinterUtility.AddPrinterPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="600">
+    <StackPanel>
+        <TextBlock Text="Browse a print server, or type the printer path directly." Style="{StaticResource Caption}" FontSize="13" Margin="0,0,0,14" />
+
+        <TextBlock Text="Print server" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="Server" Uid="NoSubmit" Tag="Server name or IP, e.g. printsrv01" KeyDown="Server_KeyDown" />
+            <Button x:Name="BrowseBtn" Grid.Column="1" Tag="&#xE721;" Content="Browse" Margin="8,0,0,0" Click="Browse_Click" />
+        </Grid>
+
+        <Grid Margin="0,12,0,0" Height="210">
+            <ListBox x:Name="Shares" Style="{StaticResource CardList}" SelectionChanged="Shares_SelectionChanged" MouseDoubleClick="Shares_MouseDoubleClick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="&#xE749;" Style="{StaticResource Icon}" Foreground="{DynamicResource AccentFg}" Margin="0,0,12,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding ShareName}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Name}" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="Status" Style="{StaticResource Caption}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" MaxWidth="460" Text="Shared printers appear here after you browse a server." />
+        </Grid>
+
+        <TextBlock Text="Printer path" FontWeight="SemiBold" Margin="0,14,0,6" />
+        <TextBox x:Name="Path" Tag="\\server\printer" />
+        <TextBlock x:Name="PathError" Foreground="{DynamicResource ErrorFg}" FontSize="12" Margin="0,4,0,0" Visibility="Collapsed" />
+
+        <CheckBox x:Name="DefaultBox" Content="Set as my default printer" Margin="0,16,0,0" />
+        <CheckBox x:Name="AllUsersBox" Margin="0,10,0,0">
+            <StackPanel>
+                <TextBlock Text="Install for all users of this PC" />
+                <TextBlock Text="Installs the driver as administrator (UAC) – avoids 'driver install' prompts for standard users."
+                           Style="{StaticResource Caption}" Margin="0,2,0,0" />
+            </StackPanel>
+        </CheckBox>
+    </StackPanel>
+</UserControl>
