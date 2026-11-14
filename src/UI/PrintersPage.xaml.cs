@@ -263,10 +263,28 @@ namespace PrinterUtility
             string unc = panel.UncPath;
             bool makeDefault = panel.SetAsDefault;
             bool allUsers = panel.AllUsers;
+            var (credUser, credPassword) = panel.TakeCredentials();
 
+            await Connect(unc, makeDefault, allUsers, credUser, credPassword);
+        }
+
+        /// <summary>Connects the printer; on a credential error offers to save credentials and retries.</summary>
+        private static async Task Connect(string unc, bool makeDefault, bool allUsers, string credUser = null, string credPassword = null)
+        {
+            bool retryWithCredentials = false;
             await Shell.Busy(async () =>
             {
                 bool ok;
+                if (credUser != null)
+                {
+                    // saved for the logged-on user before the spooler connects, so the connection uses it
+                    if (!await Task.Run(() => Credentials.Save(unc, credUser, credPassword)))
+                    {
+                        Shell.NotifyFailure($"{Credentials.HostOf(unc)} didn't accept those credentials.");
+                        return;
+                    }
+                }
+
                 if (allUsers)
                 {
                     ok = await Elevation.RunAdminAsync(new[] { "machine-add:" + unc });
@@ -288,6 +306,8 @@ namespace PrinterUtility
                         if (c == 5 || c == 0xbcb)
                             Shell.Notify(Tone.Error, "Driver install was blocked. Try again with 'Install for all users', or see the Point and Print fix.",
                                 "Open fixes", () => Shell.Navigate("fixes", "client-pointandprint"));
+                        else if (Credentials.IsCredentialError(c))
+                            retryWithCredentials = true;
                         else if (c == 0x11b || c == 0x709 || c == 0x7c)
                             Shell.Notify(Tone.Error, $"Connection failed (0x{c:X8}). This is usually fixed by the RPC named-pipes fix.",
                                 "Fix it", () => Shell.Navigate("fixes", "client-rpc-namedpipes"));
@@ -313,6 +333,11 @@ namespace PrinterUtility
 
                 Shell.Navigate("printers");
             });
+
+            // outside Busy: the credential dialog runs its own busy section
+            if (retryWithCredentials &&
+                await CredentialDialog.ShowAsync(unc, $"{Credentials.HostOf(unc)} didn't accept your Windows account for {unc}."))
+                await Connect(unc, makeDefault, allUsers);
         }
     }
 }

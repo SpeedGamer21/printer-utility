@@ -55,8 +55,8 @@ can run from a USB stick or a network share without installing anything.
 | **Printers** | List every printer with its status, jobs, port, server and driver; search; set the default (double-click); print a test page; open the queue; cancel all jobs; open preferences or properties; remove |
 | **Add printer** | Browse a print server's shared printers, or type `\\server\printer`. Add it for the current user, or **for all users of the PC** (installs the driver as admin) |
 | **Share a printer** | Share a local printer with any share name, optionally list it in Active Directory, and set the PC up as a print server in the same step (firewall, spooler, RPC, services). Warns when the network is set to *Public* |
-| **Fix issues** | 9 known fixes for client and server problems. Each one shows whether it's already applied on this PC, and explains exactly what it changes. Registry fixes can be undone |
-| **Tools** | Restart the spooler, clear stuck jobs, diagnose a print server (DNS, ping, SMB 445, RPC 135, remote spooler), `gpupdate /force`, flush DNS, copy the printer list, Print Management |
+| **Fix issues** | 10 known fixes for client and server problems. Each one shows whether it's already applied on this PC, and explains exactly what it changes. Registry fixes can be undone |
+| **Tools** | Restart the spooler, clear stuck jobs, save printer credentials in Credential Manager, diagnose a print server (DNS, ping, SMB 445, RPC 135, remote spooler), `gpupdate /force`, flush DNS, copy the printer list, Print Management |
 | **Activity** | Full log of everything done in the session, including output from the elevated helper |
 | **Command line** | Every main action can be scripted (`--set-default`, `--add`, `--fix`, `--share`, …) |
 | **UI** | Windows 11 style, follows the Windows **light/dark mode and accent color** |
@@ -141,10 +141,15 @@ at the bottom of the page). Setting a default turns it off automatically.
    - **Install for all users of this PC**: adds a *per-machine* connection with admin rights (UAC).
      The driver is installed once by an admin, so standard users don't get the *"Do you trust this
      printer?"* / driver-install prompt. Every user who signs in gets the printer.
+   - **Connect with a different user name and password**: for a server outside your domain, or one
+     that rejects your account. The user name and password are saved in **Credential Manager**
+     (*Windows Credentials*) for you and that server, then used for Browse and Add. A plain `user` is
+     saved as `SERVER\user`.
 4. Click **Add printer**.
 
 If it fails, the notification tells you why and links straight to the matching fix (for example
-**Fix it** for 0x0000011b).
+**Fix it** for 0x0000011b). If the server rejects your account (1326, 1219, …), a credentials dialog
+opens. After you save the credentials, the printer is added again automatically.
 
 ### 3. Share a printer from a PC
 
@@ -201,6 +206,7 @@ can be reverted.
 |---|---|
 | **Restart Print Spooler** 🛡 | Printers show *Offline*, jobs don't move, the spooler hangs |
 | **Clear stuck print jobs** 🛡 | A job is stuck and can't be deleted. Stops the spooler, empties `spool\PRINTERS`, starts it again |
+| **Credential Manager** | Lists the current user's saved Windows credentials for servers. **Add credential** saves a print server's user name and password in Credential Manager (which is blocked along with Control Panel), closes the stale connection (error 1219) and tests the logon. 🗑 removes a credential. Use it when the credential prompt rejects every password, which is common on domain-joined PCs |
 | **Diagnose a print server** | Users can't connect. Shows ✔/✖ for DNS, ping, SMB 445, RPC 135 and the remote spooler, and lists the server's shared printers |
 | **Refresh Group Policy** | GPO-deployed printers haven't arrived yet |
 | **Flush DNS cache** | A print server was moved or changed IP |
@@ -233,7 +239,8 @@ PrinterUtility.exe (runs as the user)                 PrinterUtility.exe --eleva
 
 | Id | Side | Problem | What it changes |
 |---|---|---|---|
-| `client-rpc-namedpipes` | Client | 0x0000011b / 0x00000709 / 0x0000007c on Windows 11 22H2+ | `HKLM\…\Printers\RPC\RpcUseNamedPipeProtocol = 1` |
+| `client-rpc-namedpipes` | Client | 0x0000011b / 0x00000709 / 0x0000007c on Windows 11 22H2, 23H2, 24H2 | `HKLM\…\Printers\RPC\RpcUseNamedPipeProtocol = 1` |
+| `client-domain-rpc-auth` ⚠ | Client | AD-joined PC: the credential prompt rejects every password for a printer shared from a workgroup PC or another domain | `RpcUseNamedPipeProtocol = 1`, `RpcAuthentication = 2`. Revert removes only `RpcAuthentication`. Use it together with **Tools → Credential Manager** |
 | `client-default-0x709` | Client (user) | 0x00000709 when setting a default; default keeps changing | `HKCU\…\Windows\LegacyDefaultPrinterMode = 1`, removes a stale `Device` value |
 | `client-pointandprint` ⚠ | Client | Driver-install / *trust this printer* prompt for standard users | Point and Print restrictions limited to **your** trusted server list |
 | `services-core` | Both | Spooler / Workstation / Server stopped or disabled | Sets them to Automatic and starts them |
@@ -258,6 +265,9 @@ PrinterUtility.exe --remove \\server\printer
 PrinterUtility.exe --add-all-users \\server\printer         per-machine connection (admin)
 PrinterUtility.exe --share "HP LaserJet" Accounting-HP --prepare [--publish]     (admin)
 PrinterUtility.exe --unshare "HP LaserJet"                  (admin)
+PrinterUtility.exe --save-credential pc-07 jdoe --password "..."   saves PC-07\jdoe for the current user
+PrinterUtility.exe --list-credentials                       saved server credentials (current user)
+PrinterUtility.exe --remove-credential pc-07
 PrinterUtility.exe --list-fixes                             fixes and their status on this PC
 PrinterUtility.exe --fix client-rpc-namedpipes,services-core
 PrinterUtility.exe --fix client-pointandprint --param "srv01;srv01.contoso.local"
@@ -276,6 +286,7 @@ Exit codes: `0` success, `1` an action failed, `2` invalid usage.
 | **0x00000709** when adding a printer | Same as above; also check the printer name/share |
 | **0x00000709** when setting the default | `client-default-0x709` (no admin needed) |
 | **0x0000007c** | `client-rpc-namedpipes` |
+| Domain-joined PC: *Enter network credentials* rejects every user name and password, or 0x0000052e / 1326 / 1219 | **Tools → Credential Manager → Add credential** with `SHARINGPC\user` (an account that has a password). Then apply `client-domain-rpc-auth` and `client-rpc-namedpipes`. If the **sharing** PC is the domain-joined one, apply `server-rpc-listener` on it |
 | *"Do you trust this printer?"*, access denied, 0x00000bcb | Add it with **Install for all users** (admin), or `client-pointandprint` |
 | RPC server unavailable (1722) / network path not found (53) | **Tools → Diagnose**; on the sharing PC apply `server-firewall`, `server-remote-endpoint` |
 | Sharing works on one network but not another | **Share a printer** banner: the network is probably *Public* |
@@ -319,6 +330,7 @@ src/
   Fixes.cs                 the fix catalog (add new fixes here)
   ActionRunner.cs          string actions shared by GUI, CLI and elevated helper
   Elevation.cs             UAC helper process + log hand-back
+  Credentials.cs           saved server credentials (CredWrite), session reset, logon test
   SystemTools.cs           spooler, services, firewall (COM), network profile, diagnostics
   Session.cs               current identity + demo data
   Logger.cs

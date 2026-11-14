@@ -61,6 +61,11 @@ namespace PrinterUtility
                                               share a local printer (admin); --prepare also applies
                                               the recommended print-server fixes
   PrinterUtility.exe --unshare ""Printer name""   (admin)
+  PrinterUtility.exe --save-credential server user --password ""pw""
+                                              save the sharing PC's account for the CURRENT user
+                                              (a plain user becomes server\user), then test it
+  PrinterUtility.exe --list-credentials        saved Windows credentials for servers (current user)
+  PrinterUtility.exe --remove-credential server
 ";
 
         private static int Cli(string[] args)
@@ -142,6 +147,22 @@ namespace PrinterUtility
 
                     case "--unshare":
                         return ActionRunner.Run(new[] { "unshare:" + Arg(1) });
+
+                    case "--save-credential":
+                    {
+                        // per-user: runs in this process, never through the elevated helper
+                        int i = Array.FindIndex(args, a => string.Equals(a, "--password", StringComparison.OrdinalIgnoreCase));
+                        if (i < 0) throw new ArgumentException("Missing --password.");
+                        return Credentials.Save(Arg(1), Arg(2), Arg(i + 1)) ? 0 : 1;
+                    }
+
+                    case "--list-credentials":
+                        foreach (var c in Credentials.List()) Console.WriteLine($"{c.Target,-40} {c.User}");
+                        return 0;
+
+                    case "--remove-credential":
+                        Credentials.Remove(Arg(1));
+                        return 0;
 
                     default:
                         Console.WriteLine(Help);

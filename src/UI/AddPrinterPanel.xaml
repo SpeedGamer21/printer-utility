@@ -41,6 +41,23 @@
         <TextBox x:Name="Path" Tag="\\server\printer" />
         <TextBlock x:Name="PathError" Foreground="{DynamicResource ErrorFg}" FontSize="12" Margin="0,4,0,0" Visibility="Collapsed" />
 
+        <CheckBox x:Name="CredBox" Margin="0,16,0,0" Checked="CredBox_Changed" Unchecked="CredBox_Changed">
+            <StackPanel>
+                <TextBlock Text="Connect with a different user name and password" />
+                <TextBlock Text="Saved in Credential Manager for you, for this server. Use it when the server isn't in your domain or rejects your account."
+                           Style="{StaticResource Caption}" Margin="0,2,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </CheckBox>
+        <Grid x:Name="CredFields" Margin="28,10,0,0" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="CredUser" Tag="user or SERVER\user" Margin="0,0,4,0" />
+            <PasswordBox x:Name="CredPassword" Grid.Column="1" Margin="4,0,0,0" ToolTip="Password" />
+        </Grid>
+        <TextBlock x:Name="CredError" Foreground="{DynamicResource ErrorFg}" FontSize="12" Margin="28,4,0,0" Visibility="Collapsed" />
+
         <CheckBox x:Name="DefaultBox" Content="Set as my default printer" Margin="0,16,0,0" />
         <CheckBox x:Name="AllUsersBox" Margin="0,10,0,0">
             <StackPanel>

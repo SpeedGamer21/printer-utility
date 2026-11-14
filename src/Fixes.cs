@@ -43,6 +43,7 @@ namespace PrinterUtility
         public object Value;                 // ignored when FromParameter
         public RegistryValueKind Kind = RegistryValueKind.DWord;
         public bool FromParameter;
+        public bool KeepOnRevert;            // shared with another fix – leave it in place on revert
 
         public RegValue(RegistryHive hive, string key, string name, object value, RegistryValueKind kind = RegistryValueKind.DWord)
         {
@@ -95,6 +96,7 @@ namespace PrinterUtility
         {
             foreach (var v in Values)
             {
+                if (v.KeepOnRevert) { Logger.Info($"  kept {v.Path} (used by other fixes)"); continue; }
                 using (var b = RegValue.OpenBase(v.Hive))
                 using (var k = b.OpenSubKey(v.Key, true))
                 {
@@ -161,15 +163,50 @@ namespace PrinterUtility
                 Scope = FixScope.Client,
                 Recommended = true,
                 Description =
-                    "Since Windows 11 22H2 clients connect to remote spoolers using RPC over TCP by default. Many print " +
-                    "servers / sharing PCs only accept RPC over named pipes (SMB), which makes 'Add printer' fail with " +
-                    "0x0000011b, 0x00000709 or 0x0000007c.\r\n\r\n" +
-                    "This sets the 'Configure RPC connection settings' policy on THIS PC so it connects using named pipes " +
-                    "(the pre-22H2 behaviour).\r\n\r\n" +
+                    "Windows 11 (22H2, 23H2, 24H2 and later) connects to remote spoolers with RPC over TCP by default. Many " +
+                    "print servers / sharing PCs (Windows 10, older servers, PCs with the RPC listener locked down) only " +
+                    "accept RPC over named pipes (SMB, port 445), so 'Add printer' fails with 0x0000011b, 0x00000709 or " +
+                    "0x0000007c.\r\n\r\n" +
+                    "Sets the 'Configure RPC connection settings' policy on THIS PC: Protocol = RPC over named pipes, " +
+                    "Authentication = Default (the pre-22H2 behaviour). Not needed on Windows 10.\r\n\r\n" +
                     "Registry: HKLM\\" + RpcPolicy + "\\RpcUseNamedPipeProtocol = 1\r\n" +
+                    "The sharing PC must accept named pipes (fix 'server-rpc-listener' there).\r\n" +
+                    "Domain-joined PC and the credential prompt rejects every password? Also apply " +
+                    "'client-domain-rpc-auth' and save the server's credentials under Tools.\r\n" +
                     "Note: if a GPO also manages this key, the GPO wins at the next refresh.",
                 RestartSpoolerAfter = true,
                 Values = { new RegValue(HKLM, RpcPolicy, "RpcUseNamedPipeProtocol", 1) },
+            });
+
+            list.Add(new RegistryFix
+            {
+                Id = "client-domain-rpc-auth",
+                Title = "Domain-joined PC: 'Enter network credentials' rejects every user name / password when adding a shared printer",
+                Scope = FixScope.Client,
+                RestartSpoolerAfter = true,
+                SecurityNote =
+                    "Turns off RPC-level authentication for outgoing RPC over named pipes on THIS PC. The SMB connection " +
+                    "underneath is still authenticated with the saved credentials. Only use it on clients that print to " +
+                    "workgroup PCs / PCs outside your domain.",
+                Description =
+                    "On an AD-joined Windows 11 PC, RPC over named pipes authenticates with the logged-on DOMAIN account by " +
+                    "default. A printer shared from a workgroup PC (or a PC in another domain/forest, or reached by IP) " +
+                    "doesn't know that account, so the credential prompt keeps coming back no matter what you type, or " +
+                    "the connection fails with 0x0000011b / 0x00000709 / 0x0000052e (bad user name or password).\r\n\r\n" +
+                    "Sets 'Configure RPC connection settings' on THIS PC:\r\n" +
+                    "  RpcUseNamedPipeProtocol = 1 (RPC over named pipes)\r\n" +
+                    "  RpcAuthentication = 2 (authentication disabled for outgoing named-pipe RPC)\r\n" +
+                    "Registry: HKLM\\" + RpcPolicy + "\r\n\r\n" +
+                    "Then, under Tools → Credential Manager → 'Add credential', save an account that exists ON the sharing " +
+                    "PC (SHARINGPC\\user, with a password). That also clears the cached connection that causes error 1219.\r\n\r\n" +
+                    "If the SHARING PC is the domain-joined one and clients can't log on, apply 'server-rpc-listener' " +
+                    "there (it sets Negotiate instead of Kerberos-only, so NTLM / IP connections work).\r\n" +
+                    "Revert removes RpcAuthentication only (named pipes stay on).",
+                Values =
+                {
+                    new RegValue(HKLM, RpcPolicy, "RpcUseNamedPipeProtocol", 1) { KeepOnRevert = true },
+                    new RegValue(HKLM, RpcPolicy, "RpcAuthentication", 2),
+                },
             });
 
             list.Add(new ActionFix

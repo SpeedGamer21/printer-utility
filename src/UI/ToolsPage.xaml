@@ -77,6 +77,52 @@
                 </StackPanel>
             </Border>
 
+            <!-- credentials -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Credential Manager" />
+            <Border Style="{StaticResource Card}" Padding="20,18">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource IconTile}" VerticalAlignment="Top"><TextBlock Text="&#xE8D7;" Style="{StaticResource Icon}" HorizontalAlignment="Center" Foreground="{DynamicResource AccentFg}" /></Border>
+                        <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                            <TextBlock Text="Credential Manager – Windows credentials for printers" FontWeight="SemiBold" />
+                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap"
+                                       Text="Saves the user name and password of a print server / sharing PC for the current user, exactly like Credential Manager (blocked with Control Panel). Use it when the credential prompt rejects every password – common on domain-joined PCs printing to a workgroup PC. A plain user name is saved as SERVER\user." />
+                        </StackPanel>
+                        <Button Grid.Column="2" Style="{StaticResource AccentButton}" Tag="&#xE710;" Content="Add credential" VerticalAlignment="Center" Click="SaveCredential_Click" />
+                    </Grid>
+
+                    <TextBlock x:Name="SavedEmpty" Style="{StaticResource Caption}" Margin="0,14,0,0"
+                               Text="No saved Windows credentials for servers yet." />
+                    <ItemsControl x:Name="SavedList" Margin="0,10,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0" Padding="0,8,0,4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="28" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="&#xE968;" Style="{StaticResource Icon}" Foreground="{DynamicResource AccentFg}" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Target}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding User}" Style="{StaticResource Caption}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Style="{StaticResource IconButton}" Tag="&#xE74D;" ToolTip="Remove this credential"
+                                                Click="RemoveCredential_Click" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
             <!-- more -->
             <TextBlock Style="{StaticResource SectionTitle}" Text="More" />
             <UniformGrid Columns="2">

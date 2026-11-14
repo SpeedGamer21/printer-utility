@@ -375,6 +375,9 @@ namespace PrinterUtility
                 case 5: hint = " → access denied (Point and Print restriction or permissions; try 'Add for all users' as admin)"; break;
                 case 1722: hint = " → RPC server unavailable (server off, firewall, or spooler stopped)"; break;
                 case 53: hint = " → network path not found (name/DNS/firewall)"; break;
+                case 1326: case 86: case 1244:
+                    hint = " → credentials rejected: save SERVER\\user for this server (Tools → Credential Manager); on a domain-joined PC also apply 'client-domain-rpc-auth'"; break;
+                case 1219: hint = " → already connected with other credentials: save the right ones under Tools → Credential Manager (closes the old session)"; break;
                 default: hint = ""; break;
             }
             return $"0x{err:X8} {new Win32Exception(err).Message}{hint}";

@@ -20,7 +20,7 @@ namespace PrinterUtility
             Results.ItemsSource = _results;
         }
 
-        public void OnNavigatedTo(object arg) { }
+        public void OnNavigatedTo(object arg) => RefreshSaved();
 
         private async void RestartSpooler_Click(object sender, RoutedEventArgs e) =>
             await Shell.Busy(() => Shell.RunAdmin("Print Spooler restarted.", "spooler:restart"));
@@ -66,6 +66,43 @@ namespace PrinterUtility
                 if (errors == 0) Shell.Notify(Tone.Success, $"{server} looks healthy.");
                 else Shell.Notify(Tone.Warning, $"{errors} problem(s) found with {server}.");
             });
+        }
+
+        private async void SaveCredential_Click(object sender, RoutedEventArgs e)
+        {
+            await CredentialDialog.ShowAsync(Server.Text.Trim());
+            RefreshSaved();
+        }
+
+        private async void RemoveCredential_Click(object sender, RoutedEventArgs e)
+        {
+            if (!((sender as FrameworkElement)?.DataContext is SavedCredential saved)) return;
+            if (!await Shell.Confirm("Remove saved credential?",
+                    $"Windows will stop signing in to {saved.Target} as {saved.User} for {Session.UserName}. " +
+                    "The other name of the same server (short name / FQDN) is removed too.", "Remove", danger: true))
+                return;
+            await Shell.Busy(async () =>
+            {
+                await Task.Run(() => Credentials.Remove(saved.Target));
+                Shell.Notify(Tone.Success, $"Saved credential for {saved.Target} removed.");
+            });
+            RefreshSaved();
+        }
+
+        private void RefreshSaved()
+        {
+            try
+            {
+                var list = Credentials.List();
+                SavedList.ItemsSource = list;
+                SavedEmpty.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                SavedList.ItemsSource = null;
+                SavedEmpty.Text = "Could not read Credential Manager: " + ex.Message;
+                SavedEmpty.Visibility = Visibility.Visible;
+            }
         }
 
         private async void Browse_Click(object sender, RoutedEventArgs e) => await PrintersPage.AddPrinter(Server.Text.Trim());
