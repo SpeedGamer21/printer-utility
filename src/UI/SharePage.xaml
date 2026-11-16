@@ -88,6 +88,13 @@
                                        Text="Users can find the printer with Add printer → search the directory. Needs a domain-joined PC." />
                         </StackPanel>
                     </CheckBox>
+                    <CheckBox x:Name="DomainUsers" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Let Domain Users print" />
+                            <TextBlock x:Name="DomainUsersHint" Style="{StaticResource Caption}" Margin="0,2,0,0"
+                                       Text="Adds the domain's Domain Users group to the printer's Security tab with Print permission, so every domain user prints with their own sign-in – no saved credentials. Unticking removes the entry." />
+                        </StackPanel>
+                    </CheckBox>
 
                     <Border Height="1" Background="{DynamicResource Divider}" Margin="0,20" />
 
@@ -127,6 +134,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="&#xE72D;" Style="{StaticResource Icon}" Foreground="{DynamicResource SuccessFg}" Margin="0,0,14,0" />
                                 <StackPanel Grid.Column="1">
@@ -134,7 +142,8 @@
                                     <TextBlock Text="{Binding Unc}" FontFamily="{StaticResource MonoFont}" FontSize="13" Foreground="{DynamicResource TextSub}" />
                                 </StackPanel>
                                 <Button Grid.Column="2" Style="{StaticResource IconButton}" Tag="&#xE8C8;" ToolTip="Copy path" Click="CopyRow_Click" />
-                                <Button Grid.Column="3" Style="{StaticResource IconButton}" Tag="&#xE70F;" ToolTip="Edit" Margin="4,0,0,0" Click="EditRow_Click" />
+                                <Button Grid.Column="3" Style="{StaticResource IconButton}" Tag="&#xE8D7;" ToolTip="Who can print (add a domain user or group)" Margin="4,0,0,0" Click="PermissionsRow_Click" />
+                                <Button Grid.Column="4" Style="{StaticResource IconButton}" Tag="&#xE70F;" ToolTip="Edit" Margin="4,0,0,0" Click="EditRow_Click" />
                             </Grid>
                         </Border>
                     </DataTemplate>

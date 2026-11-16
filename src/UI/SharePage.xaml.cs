@@ -54,6 +54,13 @@ namespace PrinterUtility
             PublishHint.Text = domain
                 ? $"Users in {Session.DomainName} can find it with Add printer → search the directory."
                 : "Not available – this PC is not joined to a domain.";
+
+            try { _domainUsers = PrinterSecurity.DomainUsersSid(); }
+            catch (Exception ex) { _domainUsers = null; Logger.Warn("Could not look up the Domain Users group: " + ex.Message); }
+            DomainUsers.IsEnabled = _domainUsers != null;
+            if (_domainUsers == null)
+                DomainUsersHint.Text = "Not available – this PC is not joined to a domain.";
+            LoadDomainUsersState();
             UpdateForm();
         }
 
@@ -122,7 +129,24 @@ namespace PrinterUtility
                 ShareName.Text = p.IsShared ? p.Info.ShareName : PrinterService.SuggestShareName(p.Name);
                 Publish.IsChecked = p.Info.IsPublished;
             }
+            LoadDomainUsersState();
             UpdateForm();
+        }
+
+        // Domain Users group of the joined domain (null on a workgroup PC) and whether the selected printer
+        // already gives it Print – unticking only removes an entry that is there.
+        private System.Security.Principal.SecurityIdentifier _domainUsers;
+        private bool _domainUsersCanPrint;
+
+        private void LoadDomainUsersState()
+        {
+            var p = Selected;
+            _domainUsersCanPrint = false;
+            if (p == null || _domainUsers == null) { DomainUsers.IsChecked = false; return; }
+            try { _domainUsersCanPrint = !Session.IsDemo && PrinterSecurity.CanPrint(p.Name, _domainUsers); }
+            catch (Exception ex) { Logger.Warn($"Could not read the permissions of \"{p.Name}\": {ex.Message}"); }
+            // not shared yet: recommend it; shared: show what the printer has now
+            DomainUsers.IsChecked = p.IsShared ? _domainUsersCanPrint : true;
         }
 
         private void ShareName_TextChanged(object sender, TextChangedEventArgs e)
@@ -147,6 +171,13 @@ namespace PrinterUtility
         private void CopyRow_Click(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.DataContext is ShareVm vm) MainWindow.CopyText(vm.Unc, "Printer path");
+        }
+
+        private async void PermissionsRow_Click(object sender, RoutedEventArgs e)
+        {
+            if (!((sender as FrameworkElement)?.DataContext is ShareVm vm)) return;
+            await PermissionsDialog.ShowAsync(vm.Name);
+            LoadDomainUsersState();   // the Domain Users tick may have changed
         }
 
         private void EditRow_Click(object sender, RoutedEventArgs e)
@@ -176,6 +207,11 @@ namespace PrinterUtility
             var actions = new List<string>();
             if (Prepare.IsChecked == true) actions.AddRange(PrintServerPrep.Actions);
             actions.Add($"share:{p.Name}\\{share}\\{(Publish.IsChecked == true && Publish.IsEnabled ? 1 : 0)}");
+            if (_domainUsers != null)
+            {
+                if (DomainUsers.IsChecked == true) actions.Add($"print-perm:{p.Name},{_domainUsers.Value},1");
+                else if (_domainUsersCanPrint) actions.Add($"print-perm:{p.Name},{_domainUsers.Value},0");
+            }
 
             string unc = $@"\\{Session.MachineName}\{share}";
             await Shell.Busy(async () =>

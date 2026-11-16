@@ -278,7 +278,7 @@ namespace PrinterUtility
                 if (credUser != null)
                 {
                     // saved for the logged-on user before the spooler connects, so the connection uses it
-                    if (!await Task.Run(() => Credentials.Save(unc, credUser, credPassword)))
+                    if (!await CredentialDialog.SaveAndApplyAsync(unc, credUser, credPassword))
                     {
                         Shell.NotifyFailure($"{Credentials.HostOf(unc)} didn't accept those credentials.");
                         return;

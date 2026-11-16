@@ -4,10 +4,15 @@
 share a printer from a PC, and fix the usual printer-sharing errors (0x0000011b, 0x00000709,
 0x0000007c, driver-install prompts). It works on PCs where Control Panel is blocked by Group Policy.
 
-### [⬇ Download PrinterUtility.exe](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe)
+### [⬇ Download PrinterUtility.exe (v2.2.0)](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe)
 
-Single file, about 230 KB, nothing to install. Runs on Windows 10/11 and Server 2016+.
+Single file, about 260 KB, nothing to install. Runs on Windows 10/11 and Server 2016+.
 [All releases](https://github.com/SpeedGamer21/printer-utility/releases)
+
+**New in 2.2.0:** *Who can print* – give a domain user or group (or all Domain Users) Print permission
+on a shared printer · saved credentials are checked with the server first, a plain user name is tried as
+`SERVER\user` and `DOMAIN\user`, and the spooler restarts so jobs don't get stuck · clear reasons when a
+server rejects an account (disabled, denied network logon, …).
 
 ![Printer Utility – Printers page](docs/screenshots/printers-dark.png)
 
@@ -144,7 +149,9 @@ at the bottom of the page). Setting a default turns it off automatically.
    - **Connect with a different user name and password**: for a server outside your domain, or one
      that rejects your account. The user name and password are saved in **Credential Manager**
      (*Windows Credentials*) for you and that server, then used for Browse and Add. A plain `user` is
-     saved as `SERVER\user`.
+     tried as `SERVER\user`, then as `DOMAIN\user`. The account the server accepts is saved; a rejected
+     one isn't. The Print Spooler is then restarted (UAC) so it reconnects with the new credential.
+     Without that restart, jobs to the server stay in the queue.
 4. Click **Add printer**.
 
 If it fails, the notification tells you why and links straight to the matching fix (for example
@@ -167,12 +174,25 @@ Use this on the PC that has the printer attached (USB or IP) and should share it
    - accepts RPC over TCP **and** named pipes (Windows 10 and 11 clients)
    - makes sure *Spooler*, *Server* and *Workstation* services are automatic and running
 6. Optionally tick **List in Active Directory** (domain-joined PCs only).
-7. Click **Share printer** and approve the UAC prompt.
-8. Give users the path shown under *Other computers connect with*, for example
+7. **Let Domain Users print** (domain-joined PCs only, ticked by default for a new share): adds the
+   domain's *Domain Users* group to the printer's **Security** tab with **Print** permission. Every
+   domain user then prints with their own sign-in, with no saved credentials on the clients. For a
+   shared printer, the tick shows whether the entry is there now; unticking it and clicking
+   **Update sharing** removes it. The group is found by its SID, so it also works on non-English domains.
+8. Click **Share printer** and approve the UAC prompt.
+9. Give users the path shown under *Other computers connect with*, for example
    `\\PC-0427\Accounting-HP` (use the **Copy** button).
 
 The **Shared from this PC** list at the bottom shows what's shared, with buttons to copy the path or
 edit sharing. To stop sharing, select the printer and click **Stop sharing**.
+
+**Who can print (permissions).** The 🔒 button on a shared printer opens its Security-tab entries,
+which Control Panel lockdowns hide. Type a domain user or group (`CONTOSO\svc-print`,
+`CONTOSO\Printer-Users`) and click **Add**, or click **Domain Users**, to give it **Print** permission.
+🗑 removes an entry. All changes are applied in one UAC prompt when you click **Apply**. Entries
+Windows needs (SYSTEM, Administrators, CREATOR OWNER, the spooler service, app packages) can't be
+removed. A domain account added here can also be saved on the clients with **Tools → Credential
+Manager** when users don't sign in with their own domain account.
 
 ### 4. Fix printer-sharing errors
 
@@ -206,7 +226,7 @@ can be reverted.
 |---|---|
 | **Restart Print Spooler** 🛡 | Printers show *Offline*, jobs don't move, the spooler hangs |
 | **Clear stuck print jobs** 🛡 | A job is stuck and can't be deleted. Stops the spooler, empties `spool\PRINTERS`, starts it again |
-| **Credential Manager** | Lists the current user's saved Windows credentials for servers. **Add credential** saves a print server's user name and password in Credential Manager (which is blocked along with Control Panel), closes the stale connection (error 1219) and tests the logon. 🗑 removes a credential. Use it when the credential prompt rejects every password, which is common on domain-joined PCs |
+| **Credential Manager** | Lists the current user's saved Windows credentials for servers. **Add credential** saves a print server's user name and password in Credential Manager (which is blocked along with Control Panel), checks the account with the server first (a plain user name as `SERVER\user`, then `DOMAIN\user`), saves the one it accepts and restarts the Print Spooler so jobs use it. On error 1219 the spooler is restarted and the logon retried. If the server refuses, Activity says why: wrong password, disabled account, or a policy that denies network logon. 🗑 removes a credential. Use it when the credential prompt rejects every password, which is common on domain-joined PCs |
 | **Diagnose a print server** | Users can't connect. Shows ✔/✖ for DNS, ping, SMB 445, RPC 135 and the remote spooler, and lists the server's shared printers |
 | **Refresh Group Policy** | GPO-deployed printers haven't arrived yet |
 | **Flush DNS cache** | A print server was moved or changed IP |
@@ -265,7 +285,11 @@ PrinterUtility.exe --remove \\server\printer
 PrinterUtility.exe --add-all-users \\server\printer         per-machine connection (admin)
 PrinterUtility.exe --share "HP LaserJet" Accounting-HP --prepare [--publish]     (admin)
 PrinterUtility.exe --unshare "HP LaserJet"                  (admin)
-PrinterUtility.exe --save-credential pc-07 jdoe --password "..."   saves PC-07\jdoe for the current user
+PrinterUtility.exe --allow-print "HP LaserJet"              Domain Users get Print permission (admin)
+PrinterUtility.exe --allow-print "HP LaserJet" CONTOSO\Accounting   or authenticated-users / any account
+PrinterUtility.exe --revoke-print "HP LaserJet" [account]   removes that account's entry (admin)
+PrinterUtility.exe --list-permissions "HP LaserJet"         who can print / manage it
+PrinterUtility.exe --save-credential pc-07 jdoe --password "..."   saves PC-07\jdoe (or DOMAIN\jdoe) for the current user; then --restart-spooler
 PrinterUtility.exe --list-credentials                       saved server credentials (current user)
 PrinterUtility.exe --remove-credential pc-07
 PrinterUtility.exe --list-fixes                             fixes and their status on this PC
@@ -287,6 +311,8 @@ Exit codes: `0` success, `1` an action failed, `2` invalid usage.
 | **0x00000709** when setting the default | `client-default-0x709` (no admin needed) |
 | **0x0000007c** | `client-rpc-namedpipes` |
 | Domain-joined PC: *Enter network credentials* rejects every user name and password, or 0x0000052e / 1326 / 1219 | **Tools → Credential Manager → Add credential** with `SHARINGPC\user` (an account that has a password). Then apply `client-domain-rpc-auth` and `client-rpc-namedpipes`. If the **sharing** PC is the domain-joined one, apply `server-rpc-listener` on it |
+| Printer added with saved credentials, but jobs stay in the queue until the spooler is restarted | The spooler still had its old connection to the server. Saving credentials now restarts it; for older saves use **Tools → Restart spooler** once |
+| The print server rejects your admin account (1385, 1331) | 1385: the server's policy *Deny access to this computer from the network* blocks it. Security baselines block local admin accounts, and often Domain Admins on workstations. 1331: the account is disabled (the built-in Administrator is by default). Use a normal account that can print, for example `DOMAIN\user` or a local print user on that PC |
 | *"Do you trust this printer?"*, access denied, 0x00000bcb | Add it with **Install for all users** (admin), or `client-pointandprint` |
 | RPC server unavailable (1722) / network path not found (53) | **Tools → Diagnose**; on the sharing PC apply `server-firewall`, `server-remote-endpoint` |
 | Sharing works on one network but not another | **Share a printer** banner: the network is probably *Public* |
@@ -314,7 +340,7 @@ cd printer-utility
 dotnet build -c Release
 ```
 
-The output is `bin\Release\net48\PrinterUtility.exe` (about 230 KB). Copying just that one file is
+The output is `bin\Release\net48\PrinterUtility.exe` (about 260 KB). Copying just that one file is
 enough to deploy it.
 
 ## Project structure
@@ -332,6 +358,7 @@ src/
   ActionRunner.cs          string actions shared by GUI, CLI and elevated helper
   Elevation.cs             UAC helper process + log hand-back
   Credentials.cs           saved server credentials (CredWrite), session reset, logon test
+  PrinterSecurity.cs       Print permission on shared printers (Domain Users by SID)
   SystemTools.cs           spooler, services, firewall (COM), network profile, diagnostics
   Session.cs               current identity + demo data
   Logger.cs

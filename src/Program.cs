@@ -61,6 +61,11 @@ namespace PrinterUtility
                                               share a local printer (admin); --prepare also applies
                                               the recommended print-server fixes
   PrinterUtility.exe --unshare ""Printer name""   (admin)
+  PrinterUtility.exe --allow-print ""Printer name"" [account]
+                                              give an account Print permission (admin); account is
+                                              domain-users (default), authenticated-users or DOMAIN\name
+  PrinterUtility.exe --revoke-print ""Printer name"" [account]   remove that account's entry (admin)
+  PrinterUtility.exe --list-permissions ""Printer name""          who can print / manage it
   PrinterUtility.exe --save-credential server user --password ""pw""
                                               save the sharing PC's account for the CURRENT user
                                               (a plain user becomes server\user), then test it
@@ -148,12 +153,28 @@ namespace PrinterUtility
                     case "--unshare":
                         return ActionRunner.Run(new[] { "unshare:" + Arg(1) });
 
+                    case "--list-permissions":
+                        foreach (var p in PrinterSecurity.List(Arg(1))) Console.WriteLine($"{p.Name,-40} {p.Rights}");
+                        return 0;
+
+                    case "--allow-print":
+                    case "--revoke-print":
+                    {
+                        var sid = PrinterSecurity.Resolve(args.Length > 2 ? args[2] : "domain-users");
+                        bool allow = string.Equals(args[0], "--allow-print", StringComparison.OrdinalIgnoreCase);
+                        return ActionRunner.Run(new[] { $"print-perm:{Arg(1)},{sid.Value},{(allow ? 1 : 0)}" });
+                    }
+
                     case "--save-credential":
                     {
                         // per-user: runs in this process, never through the elevated helper
                         int i = Array.FindIndex(args, a => string.Equals(a, "--password", StringComparison.OrdinalIgnoreCase));
                         if (i < 0) throw new ArgumentException("Missing --password.");
-                        return Credentials.Save(Arg(1), Arg(2), Arg(i + 1)) ? 0 : 1;
+                        var result = Credentials.Save(Arg(1), Arg(2), Arg(i + 1));
+                        if (result == CredentialResult.Accepted || result == CredentialResult.SessionConflict)
+                            Logger.Info("Restart the Print Spooler (PrinterUtility.exe --restart-spooler, as admin) so it " +
+                                        "reconnects with this credential; until then jobs to that server can stay in the queue.");
+                        return result == CredentialResult.Accepted ? 0 : 1;
                     }
 
                     case "--list-credentials":

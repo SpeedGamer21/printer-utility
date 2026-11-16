@@ -13,6 +13,18 @@ namespace PrinterUtility
         public string User { get; set; }
     }
 
+    internal enum CredentialResult
+    {
+        /// <summary>Saved, and the server accepted it.</summary>
+        Accepted,
+        /// <summary>The server rejected the account; nothing was saved.</summary>
+        Rejected,
+        /// <summary>A connection under another account is still open (1219) – restart the spooler and try again.</summary>
+        SessionConflict,
+        /// <summary>Saved, but the server couldn't be reached to check it.</summary>
+        Unverified,
+    }
+
     /// <summary>
     /// Saved Windows credentials for a print server / sharing PC (what Credential Manager stores),
     /// written straight to the user's credential vault so it works when Control Panel is blocked.
@@ -48,8 +60,29 @@ namespace PrinterUtility
             return shortName + "\\" + user;
         }
 
-        /// <summary>Saves the credential for the server (and its other name form), drops stale sessions, tests it.</summary>
-        public static bool Save(string server, string user, string password)
+        /// <summary>
+        /// The accounts to try for what was typed. "DOMAIN\user", "user@domain" and e-mail addresses are used as is.
+        /// A plain "user" is tried as a local account of the server (SERVER\user) and, when this PC's user is
+        /// signed in to a domain, as a domain account (DOMAIN\user) – "admin" can mean either.
+        /// </summary>
+        public static string[] Candidates(string host, string user)
+        {
+            user = (user ?? "").Trim();
+            var local = QualifyUser(host, user);
+            if (local == user) return new[] { user };
+            var domain = Environment.UserDomainName;
+            if (string.IsNullOrEmpty(domain) || string.Equals(domain, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(domain + "\\" + user, local, StringComparison.OrdinalIgnoreCase))
+                return new[] { local };
+            return new[] { local, domain + "\\" + user };
+        }
+
+        /// <summary>
+        /// Checks the user name / password against the server first (a plain user name as SERVER\user, then as
+        /// DOMAIN\user), saves the account it accepts for the server (and its other name form), drops stale
+        /// sessions and tests the saved credential. Rejected accounts are not saved.
+        /// </summary>
+        public static CredentialResult Save(string server, string user, string password)
         {
             var host = HostOf(server);
             if (host.Length == 0) throw new ArgumentException("Enter the server name or IP.");
@@ -57,23 +90,76 @@ namespace PrinterUtility
             if (string.IsNullOrEmpty(password))
                 throw new ArgumentException("Enter the password. Accounts with a blank password can't log on over the network.");
 
-            var qualified = QualifyUser(host, user);
-            if (qualified != user.Trim()) Logger.Info($"User name '{user.Trim()}' → '{qualified}' (local account on {host}).");
-
-            if (Session.IsDemo) { Logger.Ok($"[demo] would save credentials for {host} as {qualified}"); return true; }
+            var candidates = Candidates(host, user);
+            if (Session.IsDemo) { Logger.Ok($"[demo] would save credentials for {host} as {candidates[0]}"); return CredentialResult.Accepted; }
 
             if (SystemTools.IsAdmin)
                 Logger.Warn("Running elevated: the credential is saved for the account running this window. " +
                             "If that isn't the user who prints, run Printer Utility as that user.");
 
+            string chosen = null;
+            bool unreachable = false;
+            foreach (var candidate in candidates)
+            {
+                DropSessions(host);
+                Logger.Info($"Signing in to \\\\{host} as {candidate}...");
+                int rc = Connect(host, candidate, password);
+                if (rc == 0)
+                {
+                    WNetCancelConnection2($@"\\{host}\IPC$", 0, true);
+                    chosen = candidate;
+                    break;
+                }
+                if (rc == 1219)
+                {
+                    Logger.Warn($"\\\\{host} still has an open connection under another account (1219), " +
+                                "usually held by the Print Spooler or a mapped drive.");
+                    return CredentialResult.SessionConflict;
+                }
+                if (IsCredentialError(rc)) { Logger.Error($"\\\\{host} rejected {candidate}: {Reason(rc)}"); continue; }
+
+                Logger.Warn($"Could not check the account with \\\\{host}: 0x{rc:X8} {new Win32Exception(rc).Message}");
+                unreachable = true;
+                break;
+            }
+
+            if (chosen == null && !unreachable)
+            {
+                Logger.Error($"Nothing was saved: \\\\{host} didn't accept " + string.Join(" or ", candidates) + ". " +
+                             "For a domain account type DOMAIN\\user; for an account of that PC type " +
+                             HostShortName(host) + "\\user. The account must have a password.");
+                return CredentialResult.Rejected;
+            }
+            chosen = chosen ?? candidates[0];
+
             foreach (var target in Targets(host))
             {
-                Write(target, qualified, password);
-                Logger.Ok($"Saved Windows credential for '{target}' (user {qualified}).");
+                Write(target, chosen, password);
+                Logger.Ok($"Saved Windows credential for '{target}' (user {chosen}).");
             }
 
             DropSessions(host);
-            return Test(host);
+            return unreachable ? CredentialResult.Unverified : Test(host);
+        }
+
+        /// <summary>Plain-language reason for a logon error from the server.</summary>
+        public static string Reason(int code)
+        {
+            switch (code)
+            {
+                case 1326: case 86: return "wrong user name or password (or the account doesn't exist on that PC / domain).";
+                case 1327: return "account restriction – a blank password, logon hours, or allowed-workstations limit.";
+                case 1331: return "the account is disabled. The built-in Administrator account of a PC is disabled by default.";
+                case 1385: return "that PC's policy doesn't allow this account to log on over the network " +
+                                  "('Deny access to this computer from the network'). Security baselines block local " +
+                                  "administrator accounts and often Domain Admins on workstations – use a normal account.";
+                case 1330: return "the password has expired.";
+                case 1907: return "the password must be changed before the first logon.";
+                case 1793: return "the account has expired.";
+                case 1909: return "the account is locked out.";
+                case 1244: return "the server requires authentication.";
+                default: return new Win32Exception(code).Message;
+            }
         }
 
         public static void Remove(string server)
@@ -127,7 +213,8 @@ namespace PrinterUtility
 
         /// <summary>Error codes that mean "the server didn't accept who you are" – offer to save credentials.</summary>
         public static bool IsCredentialError(int code) =>
-            code == 1326 || code == 86 || code == 1244 || code == 1219 || code == 1327 || code == 1331 || code == 1909;
+            code == 1326 || code == 86 || code == 1244 || code == 1219 || code == 1327 || code == 1331 || code == 1909 ||
+            code == 1385 || code == 1330 || code == 1907 || code == 1793;
 
         /// <summary>The name as entered, plus the short name / FQDN counterpart, so both ways of connecting work.</summary>
         private static string[] Targets(string host)
@@ -183,28 +270,37 @@ namespace PrinterUtility
             if (rc == 0) Logger.Info($"Closed the existing connection to \\\\{host} (it used other credentials).");
         }
 
-        /// <summary>Opens \\host\IPC$ with the saved credential to prove it is accepted.</summary>
-        private static bool Test(string host)
+        private static string HostShortName(string host) =>
+            !IPAddress.TryParse(host, out _) && host.Contains(".") ? host.Substring(0, host.IndexOf('.')).ToUpperInvariant() : host.ToUpperInvariant();
+
+        /// <summary>Opens \\host\IPC$ (with the given account, or the saved credential when user is null).</summary>
+        private static int Connect(string host, string user, string password)
         {
             var res = new NETRESOURCE { dwType = RESOURCETYPE_ANY, lpRemoteName = $@"\\{host}\IPC$" };
-            int rc = WNetAddConnection2(ref res, null, null, 0);
-            switch (rc)
+            return WNetAddConnection2(ref res, password, user, 0);
+        }
+
+        /// <summary>Opens \\host\IPC$ with the saved credential to prove Windows picks it up.</summary>
+        private static CredentialResult Test(string host)
+        {
+            int rc = Connect(host, null, null);
+            if (rc == 0)
             {
-                case 0:
-                    Logger.Ok($"\\\\{host} accepted the saved credential. Add the printer again now.");
-                    return true;
-                case 1326: case 86: case 1327: case 1331: case 1909:
-                    Logger.Error($"\\\\{host} rejected the user name or password: {new Win32Exception(rc).Message} " +
-                                 "Use an account that exists on that PC (SERVER\\user), with a password.");
-                    return false;
-                case 1219:
-                    Logger.Error($"Another connection to \\\\{host} with different credentials is still open (1219). " +
-                                 "Close mapped drives / Explorer windows to that PC, or sign out and back in, then try again.");
-                    return false;
-                default:
-                    Logger.Warn($"Saved, but the test connection to \\\\{host} failed: 0x{rc:X8} {new Win32Exception(rc).Message}");
-                    return false;
+                Logger.Ok($"\\\\{host} accepted the saved credential.");
+                return CredentialResult.Accepted;
             }
+            if (rc == 1219)
+            {
+                Logger.Warn($"Saved, but another connection to \\\\{host} under a different account is still open (1219).");
+                return CredentialResult.SessionConflict;
+            }
+            if (IsCredentialError(rc))
+            {
+                Logger.Error($"\\\\{host} rejected the saved credential: {Reason(rc)}");
+                return CredentialResult.Rejected;
+            }
+            Logger.Warn($"Saved, but the test connection to \\\\{host} failed: 0x{rc:X8} {new Win32Exception(rc).Message}");
+            return CredentialResult.Unverified;
         }
 
         // ---------------------------------------------------------------- P/Invoke

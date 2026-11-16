@@ -17,6 +17,7 @@ namespace PrinterUtility
     ///   delete-local:&lt;name&gt;   delete a local printer
     ///   share:&lt;printer&gt;\&lt;share&gt;\&lt;0|1 publish in AD&gt;
     ///   unshare:&lt;printer&gt;
+    ///   print-perm:&lt;printer&gt;,&lt;SID&gt;,&lt;1 allow|0 remove&gt;   Print permission on a local printer
     ///   netprofile:private     switch connected Public networks to Private
     /// </summary>
     internal static class ActionRunner
@@ -102,6 +103,15 @@ namespace PrinterUtility
                             Logger.Info($"Sharing \"{parts[0]}\" as \"{parts[1]}\"...");
                             PrinterService.SetSharing(parts[0], true, parts[1], parts[2] == "1");
                             Logger.Ok($"Shared: \\\\{Environment.MachineName}\\{parts[1].Trim()}");
+                            break;
+                        }
+                        case "print-perm":
+                        {
+                            // print-perm:<printer>,<SID>,<1 allow|0 remove>  (',' is illegal in local printer names)
+                            int b = arg.LastIndexOf(','), a = b > 0 ? arg.LastIndexOf(',', b - 1) : -1;
+                            if (a <= 0) throw new ArgumentException("Expected print-perm:<printer>,<SID>,<1|0>");
+                            PrinterSecurity.SetPrint(arg.Substring(0, a),
+                                new System.Security.Principal.SecurityIdentifier(arg.Substring(a + 1, b - a - 1)), arg.Substring(b + 1) == "1");
                             break;
                         }
                         case "unshare":

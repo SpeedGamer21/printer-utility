@@ -23,13 +23,23 @@ namespace PrinterUtility
 
         private bool UseCredentials => CredBox.IsChecked == true;
 
-        /// <summary>The entered user/password (or nulls), clearing the password box.</summary>
+        // server/user/password already saved (and the spooler restarted) by Browse
+        private string _appliedHost, _appliedUser, _appliedPassword;
+
+        /// <summary>
+        /// The entered user/password (or nulls), clearing the password box. Nulls too when Browse already saved
+        /// exactly these for the printer's server, so the spooler isn't restarted twice.
+        /// </summary>
         public (string user, string password) TakeCredentials()
         {
             if (!UseCredentials) return (null, null);
             var result = (CredUser.Text.Trim(), CredPassword.Password);
             CredPassword.Clear();
-            return result;
+            bool applied = _appliedHost != null &&
+                           string.Equals(_appliedHost, Credentials.HostOf(UncPath), StringComparison.OrdinalIgnoreCase) &&
+                           result.Item1 == _appliedUser && result.Item2 == _appliedPassword;
+            _appliedPassword = null;
+            return applied ? (null, null) : result;
         }
 
         public bool Validate()
@@ -86,11 +96,12 @@ namespace PrinterUtility
                     if (!ValidateCredentials()) { Status.Text = "Enter the user name and password first."; return; }
                     string user = CredUser.Text.Trim(), password = CredPassword.Password;
                     Status.Text = $"Signing in to {server}…";
-                    if (!await Task.Run(() => Credentials.Save(server, user, password)))
+                    if (!await CredentialDialog.SaveAndApplyAsync(server, user, password))
                     {
-                        Status.Text = $"{server} didn't accept that user name or password. Details are in Activity.";
+                        Status.Text = $"{server} didn't accept that user name or password. The reason is in Activity.";
                         return;
                     }
+                    (_appliedHost, _appliedUser, _appliedPassword) = (Credentials.HostOf(server), user, password);
                     Status.Text = $"Looking for shared printers on {server}…";
                 }
                 var printers = await Task.Run(() => PrinterService.GetServerPrinters(server));

@@ -25,7 +25,9 @@ namespace PrinterUtility
                 Text = (reason != null ? reason + "\n\n" : "") +
                        "Enter an account that exists on the PC or server sharing the printer, with a password. " +
                        "It's saved in Credential Manager for " + Session.UserName + " and used every time this PC connects to it. " +
-                       "A plain user name is saved as SERVER\\user; use DOMAIN\\user or an e-mail address (Microsoft account) when needed.",
+                       "A plain user name is tried as SERVER\\user (an account of that PC) and then as DOMAIN\\user; " +
+                       "the one the server accepts is saved. You can also type DOMAIN\\user or an e-mail address (Microsoft account). " +
+                       "The Print Spooler is restarted afterwards so it uses the new credential (admin prompt).",
             };
             intro.SetResourceReference(TextBlock.ForegroundProperty, "TextSub");
             var serverBox = new TextBox { Text = Credentials.HostOf(server), Tag = "Server name or IP (as you connect to it)" };
@@ -59,11 +61,43 @@ namespace PrinterUtility
             bool ok = false;
             await Shell.Busy(async () =>   // callers must not already be inside Shell.Busy
             {
-                ok = await Task.Run(() => Credentials.Save(host, user, password));
+                ok = await SaveAndApplyAsync(host, user, password);
                 if (ok) Shell.Notify(Tone.Success, $"Credentials saved for {Credentials.HostOf(host)}.");
-                else Shell.NotifyFailure($"Credentials saved, but {Credentials.HostOf(host)} didn't accept them.");
+                else Shell.NotifyFailure($"{Credentials.HostOf(host)} didn't accept those credentials.");
             });
             return ok;
+        }
+
+        /// <summary>
+        /// Saves the credential and makes the Print Spooler use it. The spooler keeps its connection to a server
+        /// open under the account it first used, so until it's restarted jobs to that server stay stuck and a
+        /// new sign-in can fail with 1219. It's restarted (one UAC prompt) on 1219 and after a successful save.
+        /// Returns true when the server accepted the saved credential.
+        /// </summary>
+        internal static async Task<bool> SaveAndApplyAsync(string server, string user, string password)
+        {
+            var host = Credentials.HostOf(server);
+            var result = await Task.Run(() => Credentials.Save(server, user, password));
+            bool restarted = false;
+            if (result == CredentialResult.SessionConflict)
+            {
+                Logger.Info($"Restarting the Print Spooler to close its old connection to \\\\{host}...");
+                restarted = await Elevation.RunAdminAsync(new[] { "spooler:restart" });
+                if (restarted) result = await Task.Run(() => Credentials.Save(server, user, password));
+                if (result == CredentialResult.SessionConflict)
+                    Logger.Error($"A connection to \\\\{host} under another account is still open (1219). Close mapped drives " +
+                                 "and Explorer windows to that PC, or sign out and back in, then try again.");
+            }
+            if (result != CredentialResult.Accepted) return false;
+
+            if (!restarted)
+            {
+                Logger.Info($"Restarting the Print Spooler so it reconnects to \\\\{host} with the saved credential...");
+                if (!await Elevation.RunAdminAsync(new[] { "spooler:restart" }))
+                    Logger.Warn($"The Print Spooler wasn't restarted. If jobs to \\\\{host} stay in the queue, " +
+                                "restart it in Tools → Restart spooler.");
+            }
+            return true;
         }
     }
 }
