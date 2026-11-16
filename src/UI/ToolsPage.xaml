@@ -91,7 +91,7 @@
                         <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
                             <TextBlock Text="Credential Manager – Windows credentials for printers" FontWeight="SemiBold" />
                             <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap"
-                                       Text="Saves the user name and password of a print server / sharing PC for the current user, exactly like Credential Manager (blocked with Control Panel). Use it when the credential prompt rejects every password – common on domain-joined PCs printing to a workgroup PC. A plain user name is saved as SERVER\user." />
+                                       Text="Saves the user name and password of a print server / sharing PC for the current user, exactly like Credential Manager (blocked with Control Panel). Use it when the credential prompt rejects every password – common on domain-joined PCs printing to a workgroup PC. The account is checked with the server first; a plain user name is tried as SERVER\user, then DOMAIN\user. The Print Spooler restarts afterwards (admin prompt)." />
                         </StackPanel>
                         <Button Grid.Column="2" Style="{StaticResource AccentButton}" Tag="&#xE710;" Content="Add credential" VerticalAlignment="Center" Click="SaveCredential_Click" />
                     </Grid>

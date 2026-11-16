@@ -95,6 +95,7 @@ namespace PrinterUtility
             {
                 var list = Credentials.List();
                 SavedList.ItemsSource = list;
+                SavedEmpty.Text = "No saved Windows credentials for servers yet.";   // replaces an earlier error
                 SavedEmpty.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
             catch (Exception ex)

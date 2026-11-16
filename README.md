@@ -4,7 +4,7 @@
 share a printer from a PC, and fix the usual printer-sharing errors (0x0000011b, 0x00000709,
 0x0000007c, driver-install prompts). It works on PCs where Control Panel is blocked by Group Policy.
 
-### [⬇ Download PrinterUtility.exe (v2.2.0)](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe)
+### [⬇ Download PrinterUtility.exe (v2.2.1)](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe)
 
 Single file, about 260 KB, nothing to install. Runs on Windows 10/11 and Server 2016+.
 [All releases](https://github.com/SpeedGamer21/printer-utility/releases)

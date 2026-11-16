@@ -97,11 +97,12 @@ namespace PrinterUtility
                 Logger.Warn("Running elevated: the credential is saved for the account running this window. " +
                             "If that isn't the user who prints, run Printer Utility as that user.");
 
+            var names = Targets(host);   // DNS once: short name + FQDN
             string chosen = null;
             bool unreachable = false;
             foreach (var candidate in candidates)
             {
-                DropSessions(host);
+                DropSessions(names);
                 Logger.Info($"Signing in to \\\\{host} as {candidate}...");
                 int rc = Connect(host, candidate, password);
                 if (rc == 0)
@@ -132,13 +133,26 @@ namespace PrinterUtility
             }
             chosen = chosen ?? candidates[0];
 
-            foreach (var target in Targets(host))
+            uint persist = AllowedPersist();
+            if (persist == CRED_PERSIST_NONE)
             {
-                Write(target, chosen, password);
+                Logger.Error("Group Policy doesn't allow saving passwords for network logons on this PC " +
+                             "('Network access: Do not allow storage of passwords and credentials for network authentication'). " +
+                             "Nothing was saved. Disable that policy for these PCs, or give the account Print permission " +
+                             "on the printer so users print with their own sign-in.");
+                return CredentialResult.Rejected;
+            }
+            if (persist == CRED_PERSIST_SESSION)
+                Logger.Warn("Group Policy only allows saving this credential until you sign out. " +
+                            "After a sign-out or restart it has to be saved again.");
+
+            foreach (var target in names)
+            {
+                Write(target, chosen, password, persist);
                 Logger.Ok($"Saved Windows credential for '{target}' (user {chosen}).");
             }
 
-            DropSessions(host);
+            DropSessions(names);
             return unreachable ? CredentialResult.Unverified : Test(host);
         }
 
@@ -167,15 +181,16 @@ namespace PrinterUtility
             var host = HostOf(server);
             if (host.Length == 0) throw new ArgumentException("Enter the server name or IP.");
             if (Session.IsDemo) { Logger.Ok($"[demo] would remove saved credentials for {host}"); return; }
+            var names = Targets(host);
             int removed = 0;
-            foreach (var target in Targets(host))
+            foreach (var target in names)
             {
                 if (CredDelete(target, CRED_TYPE_DOMAIN_PASSWORD, 0)) { removed++; Logger.Ok($"Removed saved credential for '{target}'."); }
                 else if (Marshal.GetLastWin32Error() != ERROR_NOT_FOUND)
                     throw new Win32Exception(Marshal.GetLastWin32Error());
             }
             if (removed == 0) Logger.Info($"No saved credential for {host}.");
-            DropSessions(host);
+            DropSessions(names);
         }
 
         /// <summary>
@@ -219,7 +234,26 @@ namespace PrinterUtility
         /// <summary>The name as entered, plus the short name / FQDN counterpart, so both ways of connecting work.</summary>
         private static string[] Targets(string host)
         {
-            if (IPAddress.TryParse(host, out _)) return new[] { host };
+            if (IPAddress.TryParse(host, out var ip))
+            {
+                // Windows matches a saved credential by the exact name in the printer path, so an IP alone
+                // doesn't cover \\PC-07\printer. Add the computer's names from reverse DNS when there are any.
+                try
+                {
+                    var fqdn = Dns.GetHostEntry(ip).HostName;
+                    // forward-confirmed: a stale PTR record must not attach the password to another PC's name
+                    if (!string.IsNullOrEmpty(fqdn) && !IPAddress.TryParse(fqdn, out _) &&
+                        Array.Exists(Dns.GetHostAddresses(fqdn), a => a.Equals(ip)))
+                    {
+                        var shortName = fqdn.Split('.')[0];
+                        return string.Equals(shortName, fqdn, StringComparison.OrdinalIgnoreCase)
+                            ? new[] { host, shortName }
+                            : new[] { host, shortName, fqdn };
+                    }
+                }
+                catch { /* no reverse DNS – save just the IP */ }
+                return new[] { host };
+            }
             try
             {
                 var fqdn = Dns.GetHostEntry(host).HostName;
@@ -234,7 +268,19 @@ namespace PrinterUtility
             return new[] { host };
         }
 
-        private static void Write(string target, string user, string password)
+        /// <summary>
+        /// How long Windows lets this user keep a domain (network logon) credential: normally on this PC for
+        /// good, but the GPO "Do not allow storage of passwords and credentials for network authentication"
+        /// (common in domain security baselines) cuts it to the sign-in session or blocks it entirely.
+        /// </summary>
+        private static uint AllowedPersist()
+        {
+            var max = new uint[CRED_TYPE_MAXIMUM];
+            if (!CredGetSessionTypes((uint)max.Length, max)) return CRED_PERSIST_LOCAL_MACHINE;   // can't tell: try the normal way
+            return Math.Min(max[CRED_TYPE_DOMAIN_PASSWORD], CRED_PERSIST_LOCAL_MACHINE);
+        }
+
+        private static void Write(string target, string user, string password, uint persist)
         {
             var blob = Encoding.Unicode.GetBytes(password);
             var cred = new CREDENTIAL
@@ -244,7 +290,7 @@ namespace PrinterUtility
                 UserName = user,
                 CredentialBlobSize = (uint)blob.Length,
                 CredentialBlob = Marshal.AllocCoTaskMem(blob.Length),
-                Persist = CRED_PERSIST_LOCAL_MACHINE,
+                Persist = persist,
             };
             try
             {
@@ -252,7 +298,10 @@ namespace PrinterUtility
                 if (!CredWrite(ref cred, 0))
                 {
                     int err = Marshal.GetLastWin32Error();
-                    throw new Win32Exception(err, $"Could not save the credential for '{target}': {new Win32Exception(err).Message}");
+                    string why = err == 1312   // ERROR_NO_SUCH_LOGON_SESSION
+                        ? "Windows has no credential store for this sign-in (Group Policy blocks saved network passwords, or the app runs as another user)."
+                        : new Win32Exception(err).Message;
+                    throw new Win32Exception(err, $"Could not save the credential for '{target}': {why}");
                 }
             }
             finally
@@ -263,11 +312,17 @@ namespace PrinterUtility
             }
         }
 
-        /// <summary>Disconnects \\host\IPC$ so the next connection uses the saved credential (avoids error 1219).</summary>
-        private static void DropSessions(string host)
+        /// <summary>
+        /// Disconnects \\host\IPC$ – under every name of the server (short name, FQDN) – so the next connection
+        /// uses the saved credential (avoids error 1219).
+        /// </summary>
+        private static void DropSessions(string[] names)
         {
-            int rc = WNetCancelConnection2($@"\\{host}\IPC$", 0, true);
-            if (rc == 0) Logger.Info($"Closed the existing connection to \\\\{host} (it used other credentials).");
+            foreach (var name in names)
+            {
+                int rc = WNetCancelConnection2($@"\\{name}\IPC$", 0, true);
+                if (rc == 0) Logger.Info($"Closed the existing connection to \\\\{name} (it used other credentials).");
+            }
         }
 
         private static string HostShortName(string host) =>
@@ -306,7 +361,10 @@ namespace PrinterUtility
         // ---------------------------------------------------------------- P/Invoke
 
         private const uint CRED_TYPE_DOMAIN_PASSWORD = 2;
+        private const uint CRED_PERSIST_NONE = 0;
+        private const uint CRED_PERSIST_SESSION = 1;
         private const uint CRED_PERSIST_LOCAL_MACHINE = 2;
+        private const int CRED_TYPE_MAXIMUM = 7;
         private const int ERROR_NOT_FOUND = 1168;
         private const uint RESOURCETYPE_ANY = 0;
 
@@ -351,6 +409,9 @@ namespace PrinterUtility
 
         [DllImport("advapi32.dll")]
         private static extern void CredFree(IntPtr buffer);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool CredGetSessionTypes(uint maximumPersistCount, [Out] uint[] maximumPersist);
 
         [DllImport("mpr.dll", CharSet = CharSet.Unicode, EntryPoint = "WNetAddConnection2W")]
         private static extern int WNetAddConnection2(ref NETRESOURCE netResource, string password, string username, uint flags);
