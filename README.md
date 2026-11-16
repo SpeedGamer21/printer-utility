@@ -6,7 +6,7 @@ share a printer from a PC, and fix the usual printer-sharing errors (0x0000011b,
 
 ### [⬇ Download PrinterUtility.exe](https://github.com/SpeedGamer21/printer-utility/releases/latest/download/PrinterUtility.exe)
 
-Single file, about 190 KB, nothing to install. Runs on Windows 10/11 and Server 2016+.
+Single file, about 230 KB, nothing to install. Runs on Windows 10/11 and Server 2016+.
 [All releases](https://github.com/SpeedGamer21/printer-utility/releases)
 
 ![Printer Utility – Printers page](docs/screenshots/printers-dark.png)
@@ -314,7 +314,7 @@ cd printer-utility
 dotnet build -c Release
 ```
 
-The output is `bin\Release\net48\PrinterUtility.exe` (about 190 KB). Copying just that one file is
+The output is `bin\Release\net48\PrinterUtility.exe` (about 230 KB). Copying just that one file is
 enough to deploy it.
 
 ## Project structure
@@ -322,6 +322,7 @@ enough to deploy it.
 ```
 PrinterUtility.csproj      WPF, .NET Framework 4.8, asInvoker manifest
 app.manifest               runs as the user, Per-Monitor-V2 DPI
+app.ico                    application icon (16–256 px)
 Themes/Styles.xaml         Windows 11 style controls (buttons, nav, toggles, cards, scrollbars)
 src/
   Program.cs               entry point: GUI, command line, --elevated helper, --demo

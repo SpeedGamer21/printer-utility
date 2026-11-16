@@ -8,9 +8,10 @@
     <AssemblyName>PrinterUtility</AssemblyName>
     <RootNamespace>PrinterUtility</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>2.1.0</Version>
+    <Version>2.1.1</Version>
     <Product>Printer Utility</Product>
     <Description>All-in-one printer utility: default printer, network printers, printer sharing, sharing fixes.</Description>
   </PropertyGroup>
